@@ -85,3 +85,15 @@ backend-auth/
 
 [ชื่อคุณ]  
 [อีเมล]
+
+source venv/Scripts/activate    # Git Bash
+# หรือ
+venv\Scripts\activate           # Command Prompt
+
+# 4. รัน API
+python app.py
+
+# 5. ทดสอบ
+# เปิด http://localhost:5000
+```
+
