@@ -50,10 +50,18 @@ app = FastAPI(title="Fund Dashboard Auth API", version="1.0.0")
 # ============================================
 # Security Scheme (เพิ่มตรงนี้)
 # ============================================
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Dependency สำหรับตรวจสอบ token"""
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token = credentials.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
