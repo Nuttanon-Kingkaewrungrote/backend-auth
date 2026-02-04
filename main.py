@@ -58,7 +58,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            detail="Missing authentication token",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -369,6 +369,13 @@ def get_profile(user: dict = Depends(get_current_user)):
 # ============================================
 @app.post("/api/auth/refresh")
 def refresh_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token = credentials.credentials
     
     try:
