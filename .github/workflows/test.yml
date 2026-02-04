@@ -18,6 +18,8 @@ jobs:
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: fund_dashboard
+          MYSQL_USER: testuser
+          MYSQL_PASSWORD: testpass
         ports:
           - 3306:3306
         options: >-
@@ -60,11 +62,13 @@ jobs:
     # 5. Run tests
     - name: Run tests
       env:
+        CI: true
         DB_HOST: 127.0.0.1
         DB_USER: root
         DB_PASSWORD: root
         DB_NAME: fund_dashboard
         SECRET_KEY: test-secret-key-for-ci
+        
       run: |
         pytest test_auth.py -v --cov=main --cov-report=xml --cov-report=term
     

@@ -96,4 +96,4 @@ python app.py
 # 5. ทดสอบ
 # เปิด http://localhost:5000
 ```
-
+pytest test_auth.py -v

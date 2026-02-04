@@ -20,13 +20,7 @@ from starlette.responses import JSONResponse
 # ============================================
 # Load .env
 # ============================================
-env_path = Path('.') / '.env'
-if env_path.exists():
-    with open(env_path, 'r', encoding='utf-8-sig') as f:
-        for line in f:
-            if '=' in line and not line.strip().startswith('#'):
-                key, value = line.strip().split('=', 1)
-                os.environ[key] = value
+
                 
 
 # ============================================

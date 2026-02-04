@@ -460,6 +460,7 @@ class TestDeleteAccount:
         assert response.status_code == 200
         assert "message" in response.json()
         assert "deleted" in response.json()["message"].lower()
+        
 # ============================================
 # Test Logout
 # ============================================
