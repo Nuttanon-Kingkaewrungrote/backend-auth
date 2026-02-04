@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Request, Header
+from fastapi import FastAPI, Request, Header, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 import pymysql
@@ -26,6 +27,7 @@ if env_path.exists():
             if '=' in line and not line.strip().startswith('#'):
                 key, value = line.strip().split('=', 1)
                 os.environ[key] = value
+                
 
 # ============================================
 # Config
@@ -44,6 +46,30 @@ DB_CONFIG = {
 # FastAPI App
 # ============================================
 app = FastAPI(title="Fund Dashboard Auth API", version="1.0.0")
+
+# ============================================
+# Security Scheme (เพิ่มตรงนี้)
+# ============================================
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Dependency สำหรับตรวจสอบ token"""
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 # CORS
 app.add_middleware(
@@ -64,7 +90,6 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         status_code=429,
         content={"error": "Too many requests. Please try again later."}
     )
-
 
 app.add_middleware(SlowAPIASGIMiddleware)
 
@@ -106,23 +131,6 @@ class DeleteAccountRequest(BaseModel):
     confirm_text: str
 
 # ============================================
-# Helper: แกะ Token จาก Header
-# ============================================
-def get_token(authorization: Optional[str]):
-    if not authorization:
-        return None
-    return authorization.replace("Bearer ", "")
-
-def decode_token(token: str):
-    """Decode token แล้วส่งกลับ payload หรือ None"""
-    try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        return {"error": "Token expired"}
-    except jwt.InvalidTokenError:
-        return {"error": "Invalid token"}
-
-# ============================================
 # 1. Home (Health Check)
 # ============================================
 @app.get("/")
@@ -150,11 +158,7 @@ def register(body: RegisterRequest):
         conn.commit()
         conn.close()
 
-        # TODO: ส่งอีเมล verify
-        # verify_link = f"http://yoursite.com/verify-email?token={verification_token}"
-        # send_email(body.email, verify_link)
         print(f"Verification token for {body.username}: {verification_token}")
-
         return {"message": "User created successfully. Please check your email to verify."}
 
     except pymysql.IntegrityError:
@@ -166,10 +170,8 @@ def register(body: RegisterRequest):
 # 3. Login (เข้าสู่ระบบ)
 # ============================================
 @app.post("/api/auth/login")
-def login(body: LoginRequest, request: Request):
-    # Rate limit: 5 ครั้ง/นาที
-    limiter.hit(request, "5/minute")
-
+@limiter.limit("5/minute")
+def login(request: Request, body: LoginRequest):
     if not body.username or not body.password:
         return {"error": "Missing credentials"}
 
@@ -180,15 +182,12 @@ def login(body: LoginRequest, request: Request):
             user = cur.fetchone()
 
         if user and bcrypt.checkpw(body.password.encode('utf-8'), user['password_hash'].encode('utf-8')):
-            # อัปเดท last_login
             with conn.cursor() as cur:
                 cur.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
             conn.commit()
 
-            # กำหนดอายุ token
             token_expires = timedelta(days=30) if body.remember_me else timedelta(hours=24)
 
-            # สร้าง JWT token
             token = jwt.encode({
                 'user_id': user['id'],
                 'username': user['username'],
@@ -214,19 +213,11 @@ def login(body: LoginRequest, request: Request):
         return {"error": str(e)}
 
 # ============================================
-# 4. Verify Token (ตรวจสอบ Token)
+# 4. Verify Token (ตรวจสอบ Token) - ใช้ Security
 # ============================================
 @app.get("/api/auth/verify")
-def verify(authorization: Optional[str] = Header(default=None)):
-    token = get_token(authorization)
-    if not token:
-        return {"error": "No token provided"}
-
-    payload = decode_token(token)
-    if "error" in payload:
-        return payload
-
-    return {"valid": True, "user": payload}
+def verify(user: dict = Depends(get_current_user)):
+    return {"valid": True, "user": user}
 
 # ============================================
 # 5. Logout (ออกจากระบบ)
@@ -259,14 +250,9 @@ def forgot_password(body: ForgotPasswordRequest):
                     (reset_token, expires, body.email)
                 )
             conn.commit()
-
-            # TODO: ส่งอีเมล reset
-            # reset_link = f"http://yoursite.com/reset-password?token={reset_token}"
-            # send_email(body.email, reset_link)
             print(f"Reset token for {body.email}: {reset_token}")
 
         conn.close()
-        # ไม่บอกว่า email มีในระบบหรือไม่ (เพื่อความปลอดภัย)
         return {"message": "If the email exists, a password reset link has been sent"}
 
     except Exception as e:
@@ -340,58 +326,48 @@ def verify_email(body: VerifyEmailRequest):
         return {"error": str(e)}
 
 # ============================================
-# 9. Get Profile (ดึงข้อมูลผู้ใช้)
+# 9. Get Profile (ดึงข้อมูลผู้ใช้) - ใช้ Security
 # ============================================
 @app.get("/api/auth/profile")
-def get_profile(authorization: Optional[str] = Header(default=None)):
-    token = get_token(authorization)
-    if not token:
-        return {"error": "No token provided"}
-
-    payload = decode_token(token)
-    if "error" in payload:
-        return payload
-
+def get_profile(user: dict = Depends(get_current_user)):
     try:
         conn = get_db()
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, username, email, role, created_at, last_login FROM users WHERE id = %s",
-                (payload['user_id'],)
+                (user['user_id'],)
             )
-            user = cur.fetchone()
+            user_data = cur.fetchone()
         conn.close()
 
-        if user:
+        if user_data:
             return {
                 "user": {
-                    "id": user['id'],
-                    "username": user['username'],
-                    "email": user['email'],
-                    "role": user['role'],
-                    "created_at": str(user['created_at']),
-                    "last_login": str(user['last_login']) if user['last_login'] else None
+                    "id": user_data['id'],
+                    "username": user_data['username'],
+                    "email": user_data['email'],
+                    "role": user_data['role'],
+                    "created_at": str(user_data['created_at']),
+                    "last_login": str(user_data['last_login']) if user_data['last_login'] else None
                 }
             }
-        return {"error": "User not found"}
+        raise HTTPException(status_code=404, detail="User not found")
 
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
-# 10. Refresh Token (ต่ออายุ Token)
+# 10. Refresh Token (ต่ออายุ Token) - ใช้ Security
 # ============================================
 @app.post("/api/auth/refresh")
-def refresh_token(authorization: Optional[str] = Header(default=None)):
-    token = get_token(authorization)
-    if not token:
-        return {"error": "No token provided"}
-
+def refresh_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    
     try:
         # Decode โดยไม่เช็ค expiration
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
 
-        # สร้าง token ใหม่ อายุ 24 ชั่วโมง
+        # สร้าง token ใหม่
         new_token = jwt.encode({
             'user_id': payload['user_id'],
             'username': payload['username'],
@@ -402,103 +378,90 @@ def refresh_token(authorization: Optional[str] = Header(default=None)):
         return {"token": new_token, "expires_in": 24 * 3600}
 
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=400, detail=str(e))
 
 # ============================================
-# 11. Change Password (เปลี่ยนรหัสผ่าน)
+# 11. Change Password (เปลี่ยนรหัสผ่าน) - ใช้ Security
 # ============================================
 @app.post("/api/auth/change-password")
-def change_password(body: ChangePasswordRequest, authorization: Optional[str] = Header(default=None)):
-    token = get_token(authorization)
-    if not token:
-        return {"error": "No token provided"}
-
+def change_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):
     if not body.current_password or not body.new_password:
-        return {"error": "Current password and new password are required"}
+        raise HTTPException(status_code=400, detail="Current password and new password are required")
 
     if len(body.new_password) < 6:
-        return {"error": "New password must be at least 6 characters"}
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
 
     if body.current_password == body.new_password:
-        return {"error": "New password must be different from current password"}
-
-    payload = decode_token(token)
-    if "error" in payload:
-        return payload
+        raise HTTPException(status_code=400, detail="New password must be different from current password")
 
     try:
         conn = get_db()
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM users WHERE id = %s", (payload['user_id'],))
-            user = cur.fetchone()
+            cur.execute("SELECT * FROM users WHERE id = %s", (user['user_id'],))
+            user_data = cur.fetchone()
 
-        if not user:
+        if not user_data:
             conn.close()
-            return {"error": "User not found"}
+            raise HTTPException(status_code=404, detail="User not found")
 
         # เช็ครหัสผ่านเก่า
-        if not bcrypt.checkpw(body.current_password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        if not bcrypt.checkpw(body.current_password.encode('utf-8'), user_data['password_hash'].encode('utf-8')):
             conn.close()
-            return {"error": "Current password is incorrect"}
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
 
         # เข้ารหัสรหัสผ่านใหม่
         hashed = bcrypt.hashpw(body.new_password.encode('utf-8'), bcrypt.gensalt())
 
         with conn.cursor() as cur:
-            cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hashed.decode('utf-8'), payload['user_id']))
+            cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hashed.decode('utf-8'), user['user_id']))
         conn.commit()
         conn.close()
 
-        # TODO: ส่งอีเมลแจ้งเตือนว่ามีการเปลี่ยนรหัสผ่าน
         return {"message": "Password changed successfully"}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
-# 12. Delete Account (ลบบัญชี)
+# 12. Delete Account (ลบบัญชี) - ใช้ Security
 # ============================================
 @app.delete("/api/auth/delete-account")
-def delete_account(body: DeleteAccountRequest, authorization: Optional[str] = Header(default=None)):
-    token = get_token(authorization)
-    if not token:
-        return {"error": "No token provided"}
-
+def delete_account(body: DeleteAccountRequest, user: dict = Depends(get_current_user)):
     if not body.password:
-        return {"error": "Password is required to delete account"}
+        raise HTTPException(status_code=400, detail="Password is required to delete account")
 
     if body.confirm_text != "DELETE":
-        return {"error": 'Please type "DELETE" to confirm account deletion'}
-
-    payload = decode_token(token)
-    if "error" in payload:
-        return payload
+        raise HTTPException(status_code=400, detail='Please type "DELETE" to confirm account deletion')
 
     try:
         conn = get_db()
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM users WHERE id = %s", (payload['user_id'],))
-            user = cur.fetchone()
+            cur.execute("SELECT * FROM users WHERE id = %s", (user['user_id'],))
+            user_data = cur.fetchone()
 
-        if not user:
+        if not user_data:
             conn.close()
-            return {"error": "User not found"}
+            raise HTTPException(status_code=404, detail="User not found")
 
         # เช็ครหัสผ่านก่อนลบ
-        if not bcrypt.checkpw(body.password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        if not bcrypt.checkpw(body.password.encode('utf-8'), user_data['password_hash'].encode('utf-8')):
             conn.close()
-            return {"error": "Incorrect password"}
+            raise HTTPException(status_code=400, detail="Incorrect password")
 
         # ลบ user
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM users WHERE id = %s", (payload['user_id'],))
+            cur.execute("DELETE FROM users WHERE id = %s", (user['user_id'],))
         conn.commit()
         conn.close()
 
-        return {"message": "Account deleted successfully", "username": user['username']}
+        return {"message": "Account deleted successfully", "username": user_data['username']}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
 # Run Server
@@ -512,14 +475,14 @@ if __name__ == "__main__":
     print("\n✨ Available Endpoints:")
     print("   POST   /api/auth/register")
     print("   POST   /api/auth/login")
-    print("   GET    /api/auth/verify")
+    print("   GET    /api/auth/verify          🔒")
     print("   POST   /api/auth/logout")
     print("   POST   /api/auth/forgot-password")
     print("   POST   /api/auth/reset-password")
     print("   POST   /api/auth/verify-email")
-    print("   GET    /api/auth/profile")
-    print("   POST   /api/auth/refresh")
-    print("   POST   /api/auth/change-password")
-    print("   DELETE /api/auth/delete-account")
+    print("   GET    /api/auth/profile         🔒")
+    print("   POST   /api/auth/refresh         🔒")
+    print("   POST   /api/auth/change-password 🔒")
+    print("   DELETE /api/auth/delete-account  🔒")
     print("=" * 50 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)

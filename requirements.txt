@@ -1,7 +1,8 @@
-fastapi
-uvicorn
-pymysql
-bcrypt
-pyjwt
-pydantic[email]
-slowapi
+fastapi==0.109.0
+uvicorn==0.27.0
+pymysql==1.1.0
+bcrypt==4.1.2
+pyjwt==2.8.0
+pydantic[email]==2.5.3
+python-multipart==0.0.6
+slowapi==0.1.9

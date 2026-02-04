@@ -1,0 +1,69 @@
+name: Run Tests
+
+# กำหนดว่าจะรันเมื่อไหร่
+on:
+  push:
+    branches: [ main, develop ]  # รันทุกครั้งที่ push ไป main หรือ develop
+  pull_request:
+    branches: [ main ]            # รันทุกครั้งที่สร้าง PR ไป main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest  # รันบน Ubuntu
+    
+    # เปิด MySQL service
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: fund_dashboard
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+    
+    steps:
+    # 1. Checkout code
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    # 2. Setup Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    # 3. Install dependencies
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest httpx pytest-cov
+    
+    # 4. Setup Database Schema
+    - name: Setup Database
+      run: |
+        mysql -h 127.0.0.1 -u root -proot fund_dashboard < schema.sql
+      continue-on-error: true  # ถ้าไม่มีไฟล์ schema.sql ก็ยังทำงานต่อได้
+    
+    # 5. Run tests
+    - name: Run tests
+      env:
+        DB_HOST: 127.0.0.1
+        DB_USER: root
+        DB_PASSWORD: root
+        DB_NAME: fund_dashboard
+        SECRET_KEY: test-secret-key-for-ci
+      run: |
+        pytest test_auth.py -v --cov=main --cov-report=xml --cov-report=term
+    
+    # 6. Upload coverage (optional)
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
