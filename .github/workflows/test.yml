@@ -42,7 +42,7 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest httpx pytest-cov
+        pip install pytest pytest-cov
     
     # 4. Setup Database Schema
     - name: Setup Database
