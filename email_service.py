@@ -4,7 +4,7 @@ from email.mime.multipart import MIMEMultipart
 import os
 from dotenv import load_dotenv
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -16,11 +16,16 @@ class EmailService:
         self.sender_email = os.getenv('EMAIL_USER')
         self.sender_password = os.getenv('EMAIL_PASSWORD')
         self.frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:8000')
+    
+    def is_configured(self) -> bool:
+        """ตรวจสอบว่า email service ถูก configure หรือไม่"""
+        return bool(self.sender_email and self.sender_password)
         
     def send_email(self, to_email: str, subject: str, body: str) -> bool:
         """ส่งอีเมลผ่าน SMTP"""
-        if not self.sender_email or not self.sender_password:
-            logger.warning("Email credentials not configured. Skipping email send.")
+        if not self.is_configured():
+            logger.warning(f"📧 Email not sent to {to_email} (no email credentials)")
+            logger.info(f"   Subject: {subject}")
             return False
             
         try:
@@ -37,11 +42,11 @@ class EmailService:
                 server.login(self.sender_email, self.sender_password)
                 server.send_message(message)
             
-            logger.info(f"Email sent successfully to {to_email}")
+            logger.info(f"✅ Email sent successfully to {to_email}")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {e}")
+            logger.error(f"❌ Failed to send email to {to_email}: {e}")
             return False
     
     def send_verification_email(self, email: str, username: str, token: str) -> bool:
@@ -132,7 +137,6 @@ class EmailService:
     
     def send_password_changed_email(self, email: str, username: str) -> bool:
         """ส่งอีเมลแจ้งเตือนเปลี่ยนรหัสผ่าน"""
-        # แก้ไข: คำนวณ current_time ก่อนใช้ใน f-string
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         subject = "รหัสผ่านของคุณถูกเปลี่ยนแปลง - Fund Dashboard"
