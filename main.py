@@ -17,15 +17,13 @@ from slowapi.middleware import SlowAPIASGIMiddleware
 from starlette.responses import JSONResponse
 import logging
 from dotenv import load_dotenv
+from email_service import email_service
+from oauth import router as oauth_router
 
-# ============================================
-# Load .env
-# ============================================
+# Load environment variables
 load_dotenv()
 
-# ============================================
-# Setup Logging
-# ============================================
+# Setup logging directory
 os.makedirs('logs', exist_ok=True)
 
 logging.basicConfig(
@@ -38,9 +36,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ============================================
-# Config
-# ============================================
+# Application configuration
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-123')
 ALGORITHM = 'HS256'
 
@@ -51,22 +47,18 @@ DB_CONFIG = {
     'database': os.getenv('DB_NAME', 'fund_dashboard'),
 }
 
-# ============================================
-# FastAPI App
-# ============================================
+# Initialize FastAPI app
 app = FastAPI(
     title="Fund Dashboard Auth API",
     version="1.0.0",
     description="REST API for Authentication with JWT"
 )
 
-# ============================================
-# Security Scheme
-# ============================================
+# Security scheme for JWT Bearer token
 security = HTTPBearer(auto_error=False)
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Dependency สำหรับตรวจสอบ token"""
+    """Dependency to verify JWT token and extract user info"""
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -91,20 +83,16 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-# ============================================
-# Middleware
-# ============================================
-
-# CORS
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ใน production ควรระบุ domain ชัดเจน
+    allow_origins=["*"],  # In production, specify exact domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Rate Limiter
+# Rate limiter setup
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
@@ -118,16 +106,14 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 app.add_middleware(SlowAPIASGIMiddleware)
 
-# ============================================
-# Database Connection
-# ============================================
+# Include OAuth router
+app.include_router(oauth_router)
+
 def get_db():
-    """สร้าง database connection"""
+    """Create database connection"""
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
-# ============================================
-# Pydantic Models
-# ============================================
+# Pydantic models for request validation
 class RegisterRequest(BaseModel):
     username: str
     password: str
@@ -156,9 +142,6 @@ class DeleteAccountRequest(BaseModel):
     password: str
     confirm_text: str
 
-# ============================================
-# Health Check Endpoints
-# ============================================
 @app.get("/")
 def home():
     """Root endpoint - API status"""
@@ -170,7 +153,7 @@ def home():
 
 @app.get("/health")
 def health_check():
-    """Health check endpoint สำหรับ monitoring"""
+    """Health check endpoint for monitoring"""
     db_status = "unknown"
     
     try:
@@ -194,13 +177,9 @@ def health_check():
         }
     }
 
-# ============================================
-# Authentication Endpoints
-# ============================================
-
 @app.post("/api/auth/register", tags=["Authentication"])
 def register(body: RegisterRequest):
-    """สมัครสมาชิก - Register new user"""
+    """Register new user"""
     if not body.username or not body.password:
         logger.warning("Register attempt with missing credentials")
         return {"error": "Missing username or password"}
@@ -219,10 +198,13 @@ def register(body: RegisterRequest):
         conn.close()
 
         logger.info(f"New user registered: {body.username}")
-        print(f"Verification token for {body.username}: {verification_token}")
         
-        # TODO: Send verification email
-        # send_verification_email(body.email, verification_token)
+        # Send verification email if email is provided
+        if body.email:
+            email_service.send_verification_email(body.email, body.username, verification_token)
+            logger.info(f"Verification email sent to: {body.email}")
+        else:
+            print(f"Verification token for {body.username}: {verification_token}")
         
         return {"message": "User created successfully. Please check your email to verify."}
 
@@ -236,7 +218,7 @@ def register(body: RegisterRequest):
 @app.post("/api/auth/login", tags=["Authentication"])
 @limiter.limit("5/minute")
 def login(request: Request, body: LoginRequest):
-    """เข้าสู่ระบบ - User login"""
+    """User login with username and password"""
     logger.info(f"Login attempt for user: {body.username} from IP: {request.client.host}")
     
     if not body.username or not body.password:
@@ -248,13 +230,14 @@ def login(request: Request, body: LoginRequest):
             cur.execute("SELECT * FROM users WHERE username = %s", (body.username,))
             user = cur.fetchone()
 
-        if user and bcrypt.checkpw(body.password.encode('utf-8'), user['password_hash'].encode('utf-8')):
-            # Update last login
+        # Check if user exists and has password (not OAuth user)
+        if user and user['password_hash'] and bcrypt.checkpw(body.password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+            # Update last login timestamp
             with conn.cursor() as cur:
                 cur.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
             conn.commit()
 
-            # Create JWT token
+            # Generate JWT token
             token_expires = timedelta(days=30) if body.remember_me else timedelta(hours=24)
             token = jwt.encode({
                 'user_id': user['id'],
@@ -287,17 +270,17 @@ def login(request: Request, body: LoginRequest):
 
 @app.get("/api/auth/verify", tags=["Authentication"])
 def verify(user: dict = Depends(get_current_user)):
-    """ตรวจสอบ Token - Verify JWT token"""
+    """Verify JWT token validity"""
     return {"valid": True, "user": user}
 
 @app.post("/api/auth/logout", tags=["Authentication"])
 def logout():
-    """ออกจากระบบ - User logout"""
+    """User logout"""
     return {"message": "Logged out successfully"}
 
 @app.post("/api/auth/forgot-password", tags=["Authentication"])
 def forgot_password(body: ForgotPasswordRequest):
-    """ลืมรหัสผ่าน - Request password reset"""
+    """Request password reset link"""
     logger.info(f"Password reset requested for email: {body.email}")
     
     if not body.email:
@@ -321,12 +304,13 @@ def forgot_password(body: ForgotPasswordRequest):
             conn.commit()
             
             logger.info(f"Password reset token generated for: {body.email}")
-            print(f"Reset token for {body.email}: {reset_token}")
             
-            # TODO: Send reset email
-            # send_password_reset_email(body.email, reset_token)
+            # Send password reset email
+            email_service.send_password_reset_email(body.email, reset_token)
+            logger.info(f"Password reset email sent to: {body.email}")
 
         conn.close()
+        # Don't reveal if email exists (security best practice)
         return {"message": "If the email exists, a password reset link has been sent"}
 
     except Exception as e:
@@ -335,7 +319,7 @@ def forgot_password(body: ForgotPasswordRequest):
 
 @app.post("/api/auth/reset-password", tags=["Authentication"])
 def reset_password(body: ResetPasswordRequest):
-    """รีเซ็ตรหัสผ่าน - Reset password with token"""
+    """Reset password using token"""
     if not body.token or not body.new_password:
         return {"error": "Token and new password are required"}
 
@@ -372,7 +356,7 @@ def reset_password(body: ResetPasswordRequest):
 
 @app.post("/api/auth/verify-email", tags=["Authentication"])
 def verify_email(body: VerifyEmailRequest):
-    """ยืนยันอีเมล - Verify email with token"""
+    """Verify email using token"""
     if not body.token:
         return {"error": "Token is required"}
 
@@ -400,14 +384,11 @@ def verify_email(body: VerifyEmailRequest):
     except Exception as e:
         logger.error(f"Verify email error: {e}")
         return {"error": str(e)}
-
-# ============================================
-# User Management Endpoints
-# ============================================
+    
 
 @app.get("/api/auth/profile", tags=["User Management"])
 def get_profile(user: dict = Depends(get_current_user)):
-    """ดูข้อมูลผู้ใช้ - Get user profile"""
+    """Get user profile information"""
     try:
         conn = get_db()
         with conn.cursor() as cur:
@@ -439,7 +420,7 @@ def get_profile(user: dict = Depends(get_current_user)):
 
 @app.post("/api/auth/refresh", tags=["User Management"])
 def refresh_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """ต่ออายุ Token - Refresh access token"""
+    """Refresh access token"""
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -450,10 +431,10 @@ def refresh_token(credentials: HTTPAuthorizationCredentials = Depends(security))
     token = credentials.credentials
     
     try:
-        # Decode without expiration check
+        # Decode token without expiration check
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
 
-        # Create new token
+        # Generate new token
         new_token = jwt.encode({
             'user_id': payload['user_id'],
             'username': payload['username'],
@@ -470,7 +451,7 @@ def refresh_token(credentials: HTTPAuthorizationCredentials = Depends(security))
 
 @app.post("/api/auth/change-password", tags=["User Management"])
 def change_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):
-    """เปลี่ยนรหัสผ่าน - Change user password"""
+    """Change user password"""
     if not body.current_password or not body.new_password:
         raise HTTPException(status_code=400, detail="Current password and new password are required")
 
@@ -506,8 +487,10 @@ def change_password(body: ChangePasswordRequest, user: dict = Depends(get_curren
 
         logger.info(f"Password changed successfully for user: {user['username']}")
         
-        # TODO: Send email notification
-        # send_password_changed_email(user_data['email'])
+        # Send email notification
+        if user_data['email']:
+            email_service.send_password_changed_email(user_data['email'], user['username'])
+            logger.info(f"Password change notification sent to: {user_data['email']}")
         
         return {"message": "Password changed successfully"}
 
@@ -519,7 +502,7 @@ def change_password(body: ChangePasswordRequest, user: dict = Depends(get_curren
 
 @app.delete("/api/auth/delete-account", tags=["User Management"])
 def delete_account(body: DeleteAccountRequest, user: dict = Depends(get_current_user)):
-    """ลบบัญชี - Delete user account"""
+    """Delete user account"""
     if not body.password:
         raise HTTPException(status_code=400, detail="Password is required to delete account")
 
@@ -542,7 +525,7 @@ def delete_account(body: DeleteAccountRequest, user: dict = Depends(get_current_
             logger.warning(f"Delete account failed for user {user['username']}: Incorrect password")
             raise HTTPException(status_code=400, detail="Incorrect password")
 
-        # Delete user
+        # Delete user (cascade will delete oauth_accounts)
         with conn.cursor() as cur:
             cur.execute("DELETE FROM users WHERE id = %s", (user['user_id'],))
         conn.commit()
@@ -557,29 +540,28 @@ def delete_account(body: DeleteAccountRequest, user: dict = Depends(get_current_
         logger.error(f"Delete account error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================
-# Run Server
-# ============================================
 if __name__ == "__main__":
     logger.info("=" * 50)
-    logger.info("🚀 FastAPI Server Starting...")
-    logger.info("📍 URL:  http://localhost:8000")
-    logger.info("📖 Docs: http://localhost:8000/docs")
+    logger.info(" FastAPI Server Starting...")
+    logger.info(" URL:  http://localhost:8000")
+    logger.info(" Docs: http://localhost:8000/docs")
     logger.info("=" * 50)
-    logger.info("\n✨ Available Endpoints:")
+    logger.info("\n Available Endpoints:")
     logger.info("   GET    /                             - API Info")
     logger.info("   GET    /health                       - Health Check")
     logger.info("   POST   /api/auth/register            - Register")
     logger.info("   POST   /api/auth/login               - Login")
-    logger.info("   GET    /api/auth/verify          🔒  - Verify Token")
+    logger.info("   GET    /api/auth/verify          (token)  - Verify Token")
     logger.info("   POST   /api/auth/logout              - Logout")
     logger.info("   POST   /api/auth/forgot-password     - Forgot Password")
     logger.info("   POST   /api/auth/reset-password      - Reset Password")
     logger.info("   POST   /api/auth/verify-email        - Verify Email")
-    logger.info("   GET    /api/auth/profile         🔒  - Get Profile")
-    logger.info("   POST   /api/auth/refresh         🔒  - Refresh Token")
-    logger.info("   POST   /api/auth/change-password 🔒  - Change Password")
-    logger.info("   DELETE /api/auth/delete-account  🔒  - Delete Account")
+    logger.info("   GET    /api/auth/profile         (token)  - Get Profile")
+    logger.info("   POST   /api/auth/refresh         (token)  - Refresh Token")
+    logger.info("   POST   /api/auth/change-password (token) - Change Password")
+    logger.info("   DELETE /api/auth/delete-account  (token)  - Delete Account")
+    logger.info("   GET    /api/auth/google/url          - Google OAuth URL")
+    logger.info("   POST   /api/auth/google/callback     - Google OAuth Callback")
     logger.info("=" * 50)
     
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

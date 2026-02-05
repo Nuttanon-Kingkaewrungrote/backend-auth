@@ -241,6 +241,9 @@ class TestChangePassword:
     
     def test_change_password_success(self):
         """✅ เปลี่ยนรหัสผ่านสำเร็จ"""
+        global test_user
+        
+        # เปลี่ยนรหัสผ่านเป็น newpassword456
         response = client.post(
             "/api/auth/change-password",
             headers={"Authorization": f"Bearer {auth_token}"},
@@ -252,16 +255,22 @@ class TestChangePassword:
         assert response.status_code == 200
         assert "message" in response.json()
         
+        # อัปเดต password ใน test_user dictionary
+        test_user["password"] = "newpassword456"
+        
         # เปลี่ยนกลับเป็นรหัสเดิม
         response = client.post(
             "/api/auth/change-password",
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "current_password": "newpassword456",
-                "new_password": test_user["password"]
+                "new_password": "password123"
             }
         )
         assert response.status_code == 200
+        
+        # อัปเดต password กลับเป็นค่าเดิม
+        test_user["password"] = "password123"
     
     def test_change_password_wrong_current(self):
         """❌ เปลี่ยนรหัสผ่านด้วย current password ผิด"""
@@ -445,6 +454,7 @@ class TestDeleteAccount:
     def test_delete_account_success(self):
         """✅ ลบบัญชีสำเร็จ (ทำเป็นขั้นตอนสุดท้าย)"""
         import json
+        # ใช้ password ปัจจุบันของ test_user ซึ่งควรเป็น "password123"
         response = client.request(
             method="DELETE",
             url="/api/auth/delete-account",
@@ -453,7 +463,7 @@ class TestDeleteAccount:
                 "Content-Type": "application/json"
             },
             content=json.dumps({
-                "password": test_user["password"],
+                "password": test_user["password"],  # ใช้ค่าจาก dict โดยตรง
                 "confirm_text": "DELETE"
             })
         )
