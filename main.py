@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from email_service import email_service
 from oauth import router as oauth_router
 
+
 # Load environment variables
 load_dotenv()
 
@@ -142,6 +143,9 @@ class DeleteAccountRequest(BaseModel):
     password: str
     confirm_text: str
 
+class SetPasswordRequest(BaseModel):
+    new_password: str
+
 @app.get("/")
 def home():
     """Root endpoint - API status"""
@@ -218,19 +222,36 @@ def register(body: RegisterRequest):
 @app.post("/api/auth/login", tags=["Authentication"])
 @limiter.limit("5/minute")
 def login(request: Request, body: LoginRequest):
-    """User login with username and password"""
-    logger.info(f"Login attempt for user: {body.username} from IP: {request.client.host}")
+    """
+    User login with username/email and password
+    
+    รับได้ทั้ง:
+    - username: "john_doe"
+    - email: "john@gmail.com"
+    """
+    logger.info(f"Login attempt for: {body.username} from IP: {request.client.host}")
     
     if not body.username or not body.password:
         return {"error": "Missing credentials"}
 
     try:
         conn = get_db()
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM users WHERE username = %s", (body.username,))
-            user = cur.fetchone()
+        
+        # ตรวจสอบว่าเป็น email หรือ username
+        if '@' in body.username:
+            # Login ด้วย email
+            logger.info(f"Login with email: {body.username}")
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM users WHERE email = %s", (body.username,))
+                user = cur.fetchone()
+        else:
+            # Login ด้วย username
+            logger.info(f"Login with username: {body.username}")
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM users WHERE username = %s", (body.username,))
+                user = cur.fetchone()
 
-        # Check if user exists and has password (not OAuth user)
+        # Check if user exists and has password (not OAuth-only user)
         if user and user['password_hash'] and bcrypt.checkpw(body.password.encode('utf-8'), user['password_hash'].encode('utf-8')):
             # Update last login timestamp
             with conn.cursor() as cur:
@@ -248,25 +269,27 @@ def login(request: Request, body: LoginRequest):
 
             conn.close()
             
-            logger.info(f"Login successful for user: {body.username}")
+            logger.info(f"Login successful for user: {user['username']}")
             
             return {
                 "token": token,
                 "user": {
                     "id": user['id'],
                     "username": user['username'],
+                    "email": user['email'],
                     "role": user['role']
                 },
                 "expires_in": 30 * 24 * 3600 if body.remember_me else 24 * 3600
             }
 
         conn.close()
-        logger.warning(f"Login failed for user: {body.username} - Invalid credentials")
-        return {"error": "Invalid username or password"}
+        logger.warning(f"Login failed for: {body.username} - Invalid credentials")
+        return {"error": "Invalid username/email or password"}
 
     except Exception as e:
         logger.error(f"Login error: {e}")
         return {"error": str(e)}
+    
 
 @app.get("/api/auth/verify", tags=["Authentication"])
 def verify(user: dict = Depends(get_current_user)):
@@ -538,6 +561,109 @@ def delete_account(body: DeleteAccountRequest, user: dict = Depends(get_current_
         raise
     except Exception as e:
         logger.error(f"Delete account error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/api/auth/set-password", tags=["User Management"])
+def set_password(body: SetPasswordRequest, user: dict = Depends(get_current_user)):
+    """
+    ตั้งรหัสผ่านสำหรับ user ที่สมัครผ่าน OAuth
+    (ใช้เมื่อต้องการ unlink OAuth account)
+    """
+    if not body.new_password or len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("SELECT has_password FROM users WHERE id = %s", (user['user_id'],))
+            user_data = cur.fetchone()
+        
+        if not user_data:
+            conn.close()
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        if user_data['has_password']:
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail="You already have a password. Use change-password instead."
+            )
+        
+        # Hash password
+        hashed = bcrypt.hashpw(body.new_password.encode('utf-8'), bcrypt.gensalt())
+        
+        # อัปเดท password
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE users 
+                SET password_hash = %s, has_password = TRUE, oauth_only = FALSE
+                WHERE id = %s
+            """, (hashed.decode('utf-8'), user['user_id']))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"User {user['user_id']} set password (was OAuth-only)")
+        
+        return {"message": "Password set successfully. You can now login with username/password."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Set password error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/auth/account-info", tags=["User Management"])
+def get_account_info(user: dict = Depends(get_current_user)):
+    """
+    ดูข้อมูล account รวมถึง OAuth providers ที่เชื่อมอยู่
+    """
+    try:
+        conn = get_db()
+        
+        # ดึงข้อมูล user
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, username, email, role, has_password, oauth_only, created_at, last_login
+                FROM users 
+                WHERE id = %s
+            """, (user['user_id'],))
+            user_data = cur.fetchone()
+        
+        # ดึง OAuth accounts
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT provider, provider_email, created_at
+                FROM oauth_accounts
+                WHERE user_id = %s
+            """, (user['user_id'],))
+            oauth_accounts = cur.fetchall()
+        
+        conn.close()
+        
+        return {
+            "user": {
+                "id": user_data['id'],
+                "username": user_data['username'],
+                "email": user_data['email'],
+                "role": user_data['role'],
+                "has_password": user_data['has_password'],
+                "oauth_only": user_data['oauth_only'],
+                "created_at": str(user_data['created_at']),
+                "last_login": str(user_data['last_login']) if user_data['last_login'] else None
+            },
+            "linked_accounts": [
+                {
+                    "provider": acc['provider'],
+                    "email": acc['provider_email'],
+                    "linked_at": str(acc['created_at'])
+                }
+                for acc in oauth_accounts
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Get account info error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
