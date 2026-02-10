@@ -87,7 +87,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact domains
+    allow_origins=[
+        "https://ideatradefund.com",
+        "https://www.ideatradefund.com",
+        "http://localhost",
+        "http://127.0.0.1",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
