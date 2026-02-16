@@ -51,7 +51,8 @@ class EmailService:
     
     def send_verification_email(self, email: str, username: str, token: str) -> bool:
         """ส่งอีเมลยืนยัน"""
-        verify_link = f"{self.frontend_url}/verify-email?token={token}"
+        # Verify email ชี้ไป backend API โดยตรง
+        verify_link = f"{self.frontend_url}/api/auth/verify-email?token={token}"
         
         subject = "ยืนยันอีเมลของคุณ - Fund Dashboard"
         body = f"""
@@ -92,7 +93,9 @@ class EmailService:
     
     def send_password_reset_email(self, email: str, token: str) -> bool:
         """ส่งอีเมลรีเซ็ตรหัสผ่าน"""
-        reset_link = f"{self.frontend_url}/reset-password?token={token}"
+        # ลิงก์ไปหน้า WordPress (ไม่ใช่ backend API)
+        wp_url = os.getenv('WP_SITE_URL', self.frontend_url)
+        reset_link = f"{wp_url}/reset-password/?token={token}"
         
         subject = "รีเซ็ตรหัสผ่านของคุณ - Fund Dashboard"
         body = f"""

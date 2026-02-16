@@ -123,7 +123,7 @@ def get_db():
 class RegisterRequest(BaseModel):
     username: str
     password: str
-    email: Optional[EmailStr] = ""
+    email: Optional[str] = None  # ไม่บังคับ, ส่งค่าว่างได้
 
 class LoginRequest(BaseModel):
     username: str
@@ -191,17 +191,39 @@ def register(body: RegisterRequest):
     """Register new user"""
     if not body.username or not body.password:
         logger.warning("Register attempt with missing credentials")
-        return {"error": "Missing username or password"}
+        raise HTTPException(status_code=400, detail="Missing username or password")
+
+    if len(body.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    # Validate email format ถ้ามี
+    if body.email and '@' not in body.email:
+        raise HTTPException(status_code=400, detail="Invalid email format")
+    
+    # ถ้า email เป็นค่าว่าง ให้เป็น None
+    email = body.email.strip() if body.email else None
+    if email == '':
+        email = None
 
     hashed = bcrypt.hashpw(body.password.encode('utf-8'), bcrypt.gensalt())
     verification_token = secrets.token_urlsafe(32)
 
     try:
         conn = get_db()
+        
+        # เช็ค email ซ้ำ (ถ้ามี email)
+        if email:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+                if cur.fetchone():
+                    conn.close()
+                    logger.warning(f"Register failed: Email '{email}' already exists")
+                    raise HTTPException(status_code=409, detail="อีเมลนี้ถูกใช้แล้ว กรุณาเข้าสู่ระบบหรือกดลืมรหัสผ่าน")
+        
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO users (username, password_hash, email, verification_token) VALUES (%s, %s, %s, %s)",
-                (body.username, hashed.decode('utf-8'), body.email, verification_token)
+                (body.username, hashed.decode('utf-8'), email, verification_token)
             )
         conn.commit()
         conn.close()
@@ -209,20 +231,20 @@ def register(body: RegisterRequest):
         logger.info(f"New user registered: {body.username}")
         
         # Send verification email if email is provided
-        if body.email:
-            email_service.send_verification_email(body.email, body.username, verification_token)
-            logger.info(f"Verification email sent to: {body.email}")
-        else:
-            print(f"Verification token for {body.username}: {verification_token}")
+        if email:
+            email_service.send_verification_email(email, body.username, verification_token)
+            logger.info(f"Verification email sent to: {email}")
         
-        return {"message": "User created successfully. Please check your email to verify."}
+        return {"message": "สมัครสมาชิกสำเร็จ!" + (" กรุณาตรวจสอบอีเมลเพื่อยืนยันบัญชี" if email else "")}
 
+    except HTTPException:
+        raise
     except pymysql.IntegrityError:
         logger.warning(f"Register failed: Username '{body.username}' already exists")
-        return {"error": "Username already exists"}
+        raise HTTPException(status_code=409, detail="Username นี้ถูกใช้แล้ว กรุณาเลือกชื่ออื่น")
     except Exception as e:
         logger.error(f"Register error: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/auth/login", tags=["Authentication"])
 @limiter.limit("5/minute")
@@ -629,7 +651,7 @@ def get_account_info(user: dict = Depends(get_current_user)):
         # ดึงข้อมูล user
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, username, email, role, has_password, oauth_only, created_at, last_login
+                SELECT id, username, display_name, avatar_url, email, role, has_password, oauth_only, created_at, last_login
                 FROM users 
                 WHERE id = %s
             """, (user['user_id'],))
@@ -650,6 +672,8 @@ def get_account_info(user: dict = Depends(get_current_user)):
             "user": {
                 "id": user_data['id'],
                 "username": user_data['username'],
+                "display_name": user_data.get('display_name') or user_data['username'],
+                "avatar_url": user_data.get('avatar_url'),
                 "email": user_data['email'],
                 "role": user_data['role'],
                 "has_password": user_data['has_password'],
@@ -670,6 +694,93 @@ def get_account_info(user: dict = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Get account info error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class UpdateProfileRequest(BaseModel):
+    display_name: Optional[str] = None
+
+@app.post("/api/auth/update-profile", tags=["User Management"])
+def update_profile(body: UpdateProfileRequest, user: dict = Depends(get_current_user)):
+    """อัพเดทชื่อแสดง"""
+    try:
+        if body.display_name is not None:
+            name = body.display_name.strip()
+            if len(name) < 1 or len(name) > 100:
+                raise HTTPException(status_code=400, detail="ชื่อต้องมี 1-100 ตัวอักษร")
+        
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("UPDATE users SET display_name = %s WHERE id = %s", (body.display_name, user['user_id']))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"User {user['user_id']} updated display_name to: {body.display_name}")
+        return {"message": "อัพเดทโปรไฟล์สำเร็จ"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update profile error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+from fastapi import File, UploadFile
+import uuid
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "avatars")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@app.post("/api/auth/upload-avatar", tags=["User Management"])
+async def upload_avatar(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """อัพโหลดรูปโปรไฟล์"""
+    try:
+        # เช็คประเภทไฟล์
+        allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        if file.content_type not in allowed:
+            raise HTTPException(status_code=400, detail="รองรับเฉพาะ JPG, PNG, GIF, WEBP")
+        
+        # เช็คขนาด (max 2MB)
+        contents = await file.read()
+        if len(contents) > 2 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="ไฟล์ต้องไม่เกิน 2MB")
+        
+        # สร้างชื่อไฟล์
+        ext = file.filename.rsplit('.', 1)[-1] if '.' in file.filename else 'jpg'
+        filename = f"{user['user_id']}_{uuid.uuid4().hex[:8]}.{ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        
+        # ลบรูปเก่า
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("SELECT avatar_url FROM users WHERE id = %s", (user['user_id'],))
+            old = cur.fetchone()
+            if old and old.get('avatar_url'):
+                old_file = os.path.join(UPLOAD_DIR, os.path.basename(old['avatar_url']))
+                if os.path.exists(old_file):
+                    os.remove(old_file)
+        
+        # บันทึกไฟล์
+        with open(filepath, 'wb') as f:
+            f.write(contents)
+        
+        # อัพเดท DB
+        avatar_url = f"/uploads/avatars/{filename}"
+        with conn.cursor() as cur:
+            cur.execute("UPDATE users SET avatar_url = %s WHERE id = %s", (avatar_url, user['user_id']))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"User {user['user_id']} uploaded avatar: {filename}")
+        return {"message": "อัพโหลดรูปสำเร็จ", "avatar_url": avatar_url}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Upload avatar error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Serve uploaded files
+from fastapi.staticfiles import StaticFiles
+app.mount("/uploads", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")), name="uploads")
+
 
 if __name__ == "__main__":
     logger.info("=" * 50)
