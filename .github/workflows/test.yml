@@ -1,17 +1,15 @@
 name: Run Tests
 
-# กำหนดว่าจะรันเมื่อไหร่
 on:
   push:
-    branches: [ main, develop ]  # รันทุกครั้งที่ push ไป main หรือ develop
+    branches: [ main ]
   pull_request:
-    branches: [ main ]            # รันทุกครั้งที่สร้าง PR ไป main
+    branches: [ main ]
 
 jobs:
   test:
-    runs-on: ubuntu-latest  # รันบน Ubuntu
+    runs-on: ubuntu-latest
     
-    # เปิด MySQL service
     services:
       mysql:
         image: mysql:8.0
@@ -23,57 +21,52 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -u root -proot"
+          --health-cmd="mysqladmin ping"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=10
-    
+          --health-retries=3
+
     steps:
-    # 1. Checkout code
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v3
     
-    # 2. Setup Python
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
     
-    # 3. Install dependencies
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
+        python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov
-    
-    # 4. Setup Database Schema
-    - name: Setup Database
-      run: |
-        mysql -h 127.0.0.1 -u root -proot fund_dashboard < schema.sql
-      continue-on-error: true  # ถ้าไม่มีไฟล์ schema.sql ก็ยังทำงานต่อได้
     
     - name: Wait for MySQL
       run: |
         until mysql -h 127.0.0.1 -u root -proot -e "SELECT 1"; do
           echo "Waiting for MySQL..."
-          sleep 5
+          sleep 2
         done
-
-    # 5. Run tests
+    
+    - name: Setup Database
+      run: |
+        mysql -h 127.0.0.1 -u root -proot fund_dashboard < database/deploy_database.sql
+    
+    - name: Create .env file
+      run: |
+        cat > .env << EOF
+        SECRET_KEY=test-secret-key-for-github-actions-12345678901234567890
+        DB_HOST=127.0.0.1
+        DB_USER=root
+        DB_PASSWORD=root
+        DB_NAME=fund_dashboard
+        ENVIRONMENT=testing
+        DEBUG=True
+        EOF
+    
     - name: Run tests
-      env:
-        CI: true
-        DB_HOST: 127.0.0.1
-        DB_USER: root
-        DB_PASSWORD: root
-        DB_NAME: fund_dashboard
-        SECRET_KEY: test-secret-key-for-ci
-        
       run: |
         pytest test_auth.py -v --cov=main --cov-report=xml --cov-report=term
     
-    # 6. Upload coverage (optional)
-    - name: Upload coverage to Codecov
+    - name: Upload coverage
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml

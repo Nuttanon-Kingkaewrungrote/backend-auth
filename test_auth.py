@@ -36,7 +36,6 @@ class TestHealthCheck:
         assert response.status_code == 200
         data = response.json()
         assert "status" in data
-        # แก้: รองรับทั้ง "ok", "OK", "healthy"
         assert data["status"].lower() in ["ok", "healthy"]
 
 
@@ -56,14 +55,13 @@ class TestRegister:
         assert response.status_code == 200
         data = response.json()
         assert "message" in data
-        # รองรับทั้งภาษาไทยและอังกฤษ
         message = data["message"].lower()
         assert "สำเร็จ" in data["message"] or "success" in message
     
     def test_register_duplicate_username(self):
         """❌ Register ซ้ำ (username มีอยู่แล้ว)"""
         response = client.post("/api/auth/register", json=test_user)
-        assert response.status_code == 409  # Conflict
+        assert response.status_code == 409
         data = response.json()
         assert "detail" in data or "error" in data
     
@@ -74,7 +72,7 @@ class TestRegister:
             "password": "password123",
             "email": "test@example.com"
         })
-        assert response.status_code == 400  # Bad Request
+        assert response.status_code == 400
         data = response.json()
         assert "detail" in data or "error" in data
     
@@ -85,7 +83,7 @@ class TestRegister:
             "password": "",
             "email": "test@example.com"
         })
-        assert response.status_code == 400  # Bad Request
+        assert response.status_code == 400
         data = response.json()
         assert "detail" in data or "error" in data
     
@@ -96,7 +94,6 @@ class TestRegister:
             "password": "password123",
             "email": "invalid-email"
         })
-        # รองรับทั้ง 400 และ 422
         assert response.status_code in [400, 422]
         data = response.json()
         assert "detail" in data or "error" in data
@@ -164,8 +161,7 @@ class TestLogin:
         assert "error" in data or "detail" in data
     
     def test_login_rate_limit(self):
-        """⏱️ Test rate limiting (5 attempts per minute)"""
-        # แก้: รองรับกรณีที่ rate limit trigger ตั้งแต่ครั้งแรก
+        """⏱️ Test rate limiting"""
         for i in range(6):
             response = client.post("/api/auth/login", json={
                 "username": "test_rate_limit",
@@ -173,7 +169,6 @@ class TestLogin:
                 "remember_me": False
             })
             
-            # รองรับทั้งกรณีที่โดน rate limit หรือไม่โดน
             assert response.status_code in [200, 401, 429]
 
 
@@ -270,7 +265,6 @@ class TestChangePassword:
         data = response.json()
         assert "message" in data
         
-        # อัปเดต password ใน test_user
         login_user["password"] = "new_password_456"
     
     def test_change_password_wrong_current(self):
@@ -295,7 +289,7 @@ class TestChangePassword:
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
                 "current_password": login_user["password"],
-                "new_password": "123"  # สั้นเกินไป
+                "new_password": "123"
             }
         )
         
@@ -358,7 +352,6 @@ class TestForgotResetPassword:
             json={"email": "nonexistent@example.com"}
         )
         
-        # ควร return success เพื่อไม่เปิดเผยว่ามี email นี้หรือไม่
         assert response.status_code == 200
         data = response.json()
         assert "message" in data
@@ -371,8 +364,6 @@ class TestForgotResetPassword:
         )
         
         assert response.status_code in [200, 400, 422]
-        data = response.json()
-        # อาจ return success เพื่อความปลอดภัย
     
     def test_reset_password_invalid_token(self):
         """❌ รีเซ็ตรหัสผ่านด้วย token ไม่ถูกต้อง"""
@@ -423,7 +414,6 @@ class TestRefreshToken:
             headers={"Authorization": "Bearer invalid_token"}
         )
         
-        # แก้: รองรับทั้ง 400 และ 401
         assert response.status_code in [400, 401]
         data = response.json()
         assert "detail" in data or "error" in data
@@ -438,7 +428,6 @@ class TestDeleteAccount:
     
     def test_delete_account_wrong_password(self):
         """❌ ลบบัญชีด้วย password ผิด"""
-        # แก้: ใช้ DELETE method แทน POST
         response = client.request(
             method="DELETE",
             url="/api/auth/delete-account",
@@ -448,7 +437,7 @@ class TestDeleteAccount:
             },
             content=json.dumps({
                 "password": "wrong_password",
-                "confirm_text": "DELETE MY ACCOUNT"
+                "confirm_text": "DELETE"  # ✅ ใช้ "DELETE"
             })
         )
         
@@ -467,7 +456,7 @@ class TestDeleteAccount:
             },
             content=json.dumps({
                 "password": login_user["password"],
-                "confirm_text": "wrong text"
+                "confirm_text": "WRONG"  # ✅ ใช้ "WRONG" แทน "wrong text"
             })
         )
         
@@ -483,7 +472,7 @@ class TestDeleteAccount:
             headers={"Content-Type": "application/json"},
             content=json.dumps({
                 "password": "anypassword",
-                "confirm_text": "DELETE MY ACCOUNT"
+                "confirm_text": "DELETE"  # ✅ ใช้ "DELETE"
             })
         )
         
@@ -502,7 +491,7 @@ class TestDeleteAccount:
             },
             content=json.dumps({
                 "password": login_user["password"],
-                "confirm_text": "DELETE"
+                "confirm_text": "DELETE"  # ✅ ใช้ "DELETE"
             })
         )
         
