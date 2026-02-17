@@ -198,6 +198,7 @@ async def google_verify_token(body: GoogleTokenRequest):
             google_id = google_user['sub']  # Google user ID
             google_email = google_user['email']
             google_name = google_user.get('name', '')
+            google_picture = google_user.get('picture', '')
         
         logger.info(f"Google Popup: {google_email} (ID: {google_id})")
         conn = get_db()
@@ -214,7 +215,12 @@ async def google_verify_token(body: GoogleTokenRequest):
         if oauth_account:
             user_id = oauth_account['user_id']
             with conn.cursor() as cur:
-                cur.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
+                # อัพเดท avatar จาก Google ถ้า user ยังไม่ได้ upload เอง (avatar_url เป็น URL ภายนอก หรือ NULL)
+                if google_picture:
+                    cur.execute("UPDATE users SET last_login=NOW(), avatar_url=CASE WHEN avatar_url IS NULL OR avatar_url LIKE 'http%%' THEN %s ELSE avatar_url END WHERE id=%s",
+                        (google_picture, user_id))
+                else:
+                    cur.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
             conn.commit()
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM users WHERE id=%s", (user_id,))
@@ -230,9 +236,13 @@ async def google_verify_token(body: GoogleTokenRequest):
                 with conn.cursor() as cur:
                     cur.execute("INSERT INTO oauth_accounts (user_id,provider,provider_user_id,provider_email) VALUES(%s,'google',%s,%s)",
                         (user_id, google_id, google_email))
-                    cur.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
+                    # อัพเดท avatar + display_name ถ้ายังไม่มี
+                    cur.execute("UPDATE users SET last_login=NOW(), avatar_url=COALESCE(avatar_url,%s), display_name=COALESCE(display_name,%s) WHERE id=%s",
+                        (google_picture or None, google_name or None, user_id))
                 conn.commit()
-                user = existing_user
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM users WHERE id=%s", (user_id,))
+                    user = cur.fetchone()
             else:
                 username = google_email.split('@')[0]
                 with conn.cursor() as cur:
@@ -240,8 +250,8 @@ async def google_verify_token(body: GoogleTokenRequest):
                     if cur.fetchone():
                         username = f"{username}_g{int(datetime.now().timestamp()) % 10000}"
                 with conn.cursor() as cur:
-                    cur.execute("INSERT INTO users (username,email,email_verified,role,has_password,oauth_only) VALUES(%s,%s,TRUE,'user',FALSE,TRUE)",
-                        (username, google_email))
+                    cur.execute("INSERT INTO users (username,display_name,avatar_url,email,email_verified,role,has_password,oauth_only) VALUES(%s,%s,%s,%s,TRUE,'user',FALSE,TRUE)",
+                        (username, google_name or username, google_picture or None, google_email))
                     user_id = cur.lastrowid
                     cur.execute("INSERT INTO oauth_accounts (user_id,provider,provider_user_id,provider_email) VALUES(%s,'google',%s,%s)",
                         (user_id, google_id, google_email))
@@ -264,6 +274,8 @@ async def google_verify_token(body: GoogleTokenRequest):
             "user": {
                 "id": user['id'],
                 "username": user['username'],
+                "display_name": user.get('display_name') or user['username'],
+                "avatar_url": user.get('avatar_url'),
                 "email": user['email'] or google_email,
                 "role": user['role']
             }
@@ -312,6 +324,7 @@ async def link_google_account(body: GoogleTokenRequest, credentials: HTTPAuthori
                 raise HTTPException(status_code=400, detail="Token not for this app")
             google_id = google_user['sub']
             google_email = google_user['email']
+            google_picture = google_user.get('picture', '')
         
         conn = get_db()
         
@@ -327,10 +340,13 @@ async def link_google_account(body: GoogleTokenRequest, credentials: HTTPAuthori
             else:
                 raise HTTPException(status_code=400, detail="Google account นี้เชื่อมกับบัญชีอื่นแล้ว")
         
-        # เชื่อม
+        # เชื่อม + อัพเดท avatar ถ้ายังไม่มี
         with conn.cursor() as cur:
             cur.execute("INSERT INTO oauth_accounts (user_id,provider,provider_user_id,provider_email) VALUES(%s,'google',%s,%s)",
                 (user['user_id'], google_id, google_email))
+            if google_picture:
+                cur.execute("UPDATE users SET avatar_url=COALESCE(avatar_url,%s), display_name=COALESCE(display_name,%s) WHERE id=%s",
+                    (google_picture, google_user.get('name'), user['user_id']))
         conn.commit()
         conn.close()
         

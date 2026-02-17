@@ -303,6 +303,8 @@ def login(request: Request, body: LoginRequest):
                 "user": {
                     "id": user['id'],
                     "username": user['username'],
+                    "display_name": user.get('display_name') or user['username'],
+                    "avatar_url": user.get('avatar_url'),
                     "email": user['email'],
                     "role": user['role']
                 },
