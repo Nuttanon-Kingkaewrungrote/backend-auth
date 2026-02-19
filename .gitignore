@@ -9,6 +9,8 @@ env/
 ENV/
 build/
 dist/
+*.pyc
+uploads/
 
 # FastAPI
 .pytest_cache/

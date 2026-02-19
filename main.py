@@ -242,9 +242,12 @@ def register(body: RegisterRequest):
     except pymysql.IntegrityError:
         logger.warning(f"Register failed: Username '{body.username}' already exists")
         raise HTTPException(status_code=409, detail="Username นี้ถูกใช้แล้ว กรุณาเลือกชื่ออื่น")
+    except pymysql.err.OperationalError as e:
+        logger.error(f"Register DB error: {e}")
+        raise HTTPException(status_code=503, detail="ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่ภายหลัง")
     except Exception as e:
         logger.error(f"Register error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่ภายหลัง")
 
 @app.post("/api/auth/login", tags=["Authentication"])
 @limiter.limit("5/minute")
@@ -315,9 +318,12 @@ def login(request: Request, body: LoginRequest):
         logger.warning(f"Login failed for: {body.username} - Invalid credentials")
         return {"error": "Invalid username/email or password"}
 
+    except pymysql.err.OperationalError as e:
+        logger.error(f"Login DB connection error: {e}")
+        return {"error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่ภายหลัง", "error_type": "db_error"}
     except Exception as e:
         logger.error(f"Login error: {e}")
-        return {"error": str(e)}
+        return {"error": "เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่ภายหลัง", "error_type": "server_error"}
     
 
 @app.get("/api/auth/verify", tags=["Authentication"])
@@ -365,9 +371,12 @@ def forgot_password(body: ForgotPasswordRequest):
         # Don't reveal if email exists (security best practice)
         return {"message": "If the email exists, a password reset link has been sent"}
 
+    except pymysql.err.OperationalError as e:
+        logger.error(f"Forgot password DB error: {e}")
+        return {"error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่ภายหลัง"}
     except Exception as e:
         logger.error(f"Forgot password error: {e}")
-        return {"error": str(e)}
+        return {"error": "เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่ภายหลัง"}
 
 @app.post("/api/auth/reset-password", tags=["Authentication"])
 def reset_password(body: ResetPasswordRequest):
@@ -402,9 +411,12 @@ def reset_password(body: ResetPasswordRequest):
         logger.info(f"Password reset successful for user ID: {user['id']}")
         return {"message": "Password reset successfully"}
 
+    except pymysql.err.OperationalError as e:
+        logger.error(f"Reset password DB error: {e}")
+        return {"error": "ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่ภายหลัง"}
     except Exception as e:
         logger.error(f"Reset password error: {e}")
-        return {"error": str(e)}
+        return {"error": "เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่ภายหลัง"}
 
 @app.post("/api/auth/verify-email", tags=["Authentication"])
 def verify_email(body: VerifyEmailRequest):

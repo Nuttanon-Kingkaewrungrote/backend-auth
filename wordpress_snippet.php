@@ -1,4 +1,18 @@
-define('FUND_BACKEND', 'https://unexcusable-depreciatingly-lieselotte.ngrok-free.dev'); # <-- เปลี่ยนเป็น URL ของ Backend API
+<?php
+/*
+ * Fund Auth v5 - Complete Auth System
+ * 
+ * Features:
+ * - Login / Register (GreenShift forms)
+ * - Navbar: เปลี่ยนปุ่ม "เข้าสู่ระบบ" เป็นชื่อ user + dropdown menu
+ * - Logout ใช้งานได้
+ * - Profile page support
+ * 
+ * ⚠️ ปิด snippet เก่าทั้งหมดก่อน
+ * แก้ FUND_BACKEND บรรทัดข้างล่าง
+ */
+
+define('FUND_BACKEND', 'https://YOUR_NGROK_URL.ngrok-free.app');
 
 
 // ============================================================
@@ -15,9 +29,10 @@ function fund_v5_login() {
         'body' => json_encode(array('username' => $_POST['username'], 'password' => $_POST['password'], 'remember_me' => $remember)),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
+    if ($code >= 500) { wp_send_json_error(array('error' => 'เซิร์ฟเวอร์มีปัญหา กรุณาลองใหม่ภายหลัง', 'error_type' => 'server')); return; }
     if ($code == 200 && isset($body['token'])) {
         $cookie_days = $remember ? 30 : 1;
         setcookie('auth_api_token', $body['token'], time() + 86400 * $cookie_days, '/');
@@ -39,7 +54,7 @@ function fund_v5_register() {
         'body' => json_encode(array('username' => $username, 'email' => $email, 'password' => $_POST['password'])),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200 && !isset($body['error'])) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -63,7 +78,7 @@ function fund_v5_verify() {
         'headers' => array('Authorization' => 'Bearer ' . $token, 'ngrok-skip-browser-warning' => 'true'),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => 'error')); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -79,7 +94,7 @@ function fund_v5_profile() {
         'headers' => array('Authorization' => 'Bearer ' . $token, 'ngrok-skip-browser-warning' => 'true'),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => 'error')); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -99,7 +114,7 @@ function fund_v5_account_info() {
         'headers' => array('Authorization' => 'Bearer ' . $token, 'ngrok-skip-browser-warning' => 'true'),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -114,7 +129,7 @@ function fund_v5_change_pw() {
         'body' => json_encode(array('current_password' => $_POST['current_password'], 'new_password' => $_POST['new_password'])),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200 && !isset($body['error'])) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -129,7 +144,7 @@ function fund_v5_set_pw() {
         'body' => json_encode(array('new_password' => $_POST['new_password'])),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200 && !isset($body['error'])) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -145,7 +160,7 @@ function fund_v5_link_google() {
         'body' => json_encode(array('credential' => $credential)),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -163,7 +178,7 @@ function fund_v5_update_profile() {
         'body' => json_encode(array('display_name' => $_POST['display_name'])),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -195,7 +210,7 @@ function fund_v5_upload_avatar() {
         'body' => $body,
         'timeout' => 30
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $resp = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200) { wp_send_json_success($resp); } else { wp_send_json_error($resp); }
@@ -207,7 +222,7 @@ function fund_v5_unlink_google() {
         'headers' => array('Authorization' => 'Bearer ' . $token, 'ngrok-skip-browser-warning' => 'true'),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -221,7 +236,7 @@ function fund_v5_google_url() {
         'headers' => array('ngrok-skip-browser-warning' => 'true'),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     wp_send_json_success($body);
 }
@@ -236,7 +251,7 @@ function fund_v5_google_verify() {
         'body' => json_encode(array('credential' => $credential)),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200 && isset($body['token'])) {
@@ -263,7 +278,7 @@ function fund_v5_forgot() {
         'body' => json_encode(array('email' => $email)),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -280,7 +295,7 @@ function fund_v5_reset_pw() {
         'body' => json_encode(array('token' => $token, 'new_password' => $password)),
         'timeout' => 15
     ));
-    if (is_wp_error($r)) { wp_send_json_error(array('message' => $r->get_error_message())); return; }
+    if (is_wp_error($r)) { wp_send_json_error(array('error' => 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', 'error_type' => 'connection')); return; }
     $body = json_decode(wp_remote_retrieve_body($r), true);
     $code = wp_remote_retrieve_response_code($r);
     if ($code == 200 && !isset($body['error'])) { wp_send_json_success($body); } else { wp_send_json_error($body); }
@@ -290,6 +305,8 @@ function fund_v5_reset_pw() {
 // ============================================================
 // CSS + JAVASCRIPT
 // ============================================================
+add_action('wp_enqueue_scripts', function(){ wp_enqueue_script('jquery'); });
+
 add_action('wp_footer', 'fund_v5_script');
 function fund_v5_script() {
     ?>
@@ -409,10 +426,9 @@ function fund_v5_script() {
             return;
         }
 
-        log('Logged in as: ' + user.username);
+        var displayName = user.display_name || user.username;
+        log('Logged in as: ' + displayName);
 
-        // หาปุ่ม "เข้าสู่ระบบ" ใน navbar
-        // GreenShift: div.gspb_button_wrapper > a.gspb-buttonbox > span
         var navWrapper = null;
         var navBtn = null;
         document.querySelectorAll('a.gspb-buttonbox, a.wp-element-button').forEach(function(a){
@@ -420,7 +436,6 @@ function fund_v5_script() {
             var href = decodeURIComponent(a.getAttribute('href')||'');
             if(t === 'เข้าสู่ระบบ' && href.indexOf('เข้าสู่ระบบ') !== -1){
                 navBtn = a;
-                // parent div.gspb_button_wrapper
                 navWrapper = a.closest('.gspb_button_wrapper') || a.parentElement;
             }
         });
@@ -432,19 +447,28 @@ function fund_v5_script() {
 
         log('Replacing navbar button');
 
-        var initial = (user.username||'U').charAt(0).toUpperCase();
+        var initial = (displayName||'U').charAt(0).toUpperCase();
         var email = user.email || '';
+        var avatarUrl = user.avatar_url;
 
-        // สร้าง profile icon + dropdown
+        // สร้าง profile icon
+        var avatarContent = '';
+        if(avatarUrl){
+            var imgSrc = avatarUrl.startsWith('http') ? avatarUrl : '<?php echo FUND_BACKEND; ?>' + avatarUrl;
+            avatarContent = '<img src="' + imgSrc + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + initial + '\'">';
+        } else {
+            avatarContent = initial;
+        }
+
         var el = document.createElement('div');
         el.style.cssText = 'position:relative;display:inline-block;';
         el.innerHTML = ''
-            + '<div id="fund-nav-trigger" style="cursor:pointer;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px;box-shadow:0 2px 8px rgba(102,126,234,0.4);transition:transform 0.2s;">'
-            + initial
+            + '<div id="fund-nav-trigger" style="cursor:pointer;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px;box-shadow:0 2px 8px rgba(102,126,234,0.4);transition:transform 0.2s;overflow:hidden;">'
+            + avatarContent
             + '</div>'
             + '<div id="fund-nav-dropdown" class="fund-dropdown">'
             + '  <div class="fund-dropdown-header">'
-            + '    <div class="name">' + user.username + '</div>'
+            + '    <div class="name">' + displayName + '</div>'
             + '    <div class="email">' + (email||'') + '</div>'
             + '  </div>'
             + '  <a href="/profile/">'
@@ -455,15 +479,12 @@ function fund_v5_script() {
             + '  </a>'
             + '</div>';
 
-        // แทนที่ wrapper ทั้ง div
         navWrapper.parentNode.replaceChild(el, navWrapper);
 
-        // Hover effect
         var trigger = document.getElementById('fund-nav-trigger');
         trigger.addEventListener('mouseenter', function(){ this.style.transform='scale(1.1)'; });
         trigger.addEventListener('mouseleave', function(){ this.style.transform=''; });
 
-        // Toggle dropdown
         var dd = document.getElementById('fund-nav-dropdown');
         trigger.addEventListener('click', function(e){
             e.stopPropagation();
@@ -471,7 +492,6 @@ function fund_v5_script() {
         });
         document.addEventListener('click', function(){ dd.classList.remove('open'); });
 
-        // Logout
         document.getElementById('fund-nav-logout').addEventListener('click', function(e){
             e.preventDefault();
             doLogout();
@@ -506,7 +526,8 @@ function fund_v5_script() {
                 jQuery.post(AJAX, {action:'fund_google_set', token:gToken}, function(res){
                     if(res.success){
                         localStorage.setItem('auth_user', JSON.stringify(user));
-                        msg('เข้าสู่ระบบด้วย Google สำเร็จ! ยินดีต้อนรับ ' + user.username, true);
+                        var welcomeName = user.display_name || user.username;
+                        msg('เข้าสู่ระบบด้วย Google สำเร็จ! ยินดีต้อนรับ ' + welcomeName, true);
                         setTimeout(function(){ window.location.href='/'; }, 1200);
                     }
                 });
@@ -522,8 +543,7 @@ function fund_v5_script() {
             var user = null;
             try { user = JSON.parse(localStorage.getItem('auth_user')); } catch(e){}
             if(user){
-                log('Already logged in — redirecting');
-                window.location.href = '/';
+                log('Already logged in'); safeRedirect('/');
                 return;
             }
         }
@@ -566,7 +586,8 @@ function fund_v5_script() {
                     log('Res: ' + JSON.stringify(res).substring(0,200));
                     if(res.success && res.data && res.data.token){
                         localStorage.setItem('auth_user', JSON.stringify(res.data.user));
-                        msg('เข้าสู่ระบบสำเร็จ! ยินดีต้อนรับ ' + res.data.user.username, true);
+                        var welcomeName = res.data.user.display_name || res.data.user.username;
+                        msg('เข้าสู่ระบบสำเร็จ! ยินดีต้อนรับ ' + welcomeName, true);
                         setTimeout(function(){ window.location.href='/'; }, 1200);
                     } else {
                         var m = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
@@ -579,7 +600,8 @@ function fund_v5_script() {
                 },
                 error: function(x,s,e){
                     log('ERR: '+s+' '+e);
-                    msg('เชื่อมต่อ Backend ไม่ได้', false);
+                    if(s==='timeout') msg('เซิร์ฟเวอร์ไม่ตอบสนอง กรุณาลองใหม่', false);
+                    else msg('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง', false);
                     reset();
                 }
             });
@@ -683,7 +705,7 @@ function fund_v5_script() {
         if(token){
             var user = null;
             try { user = JSON.parse(localStorage.getItem('auth_user')); } catch(e){}
-            if(user){ window.location.href = '/'; return; }
+            if(user){ safeRedirect('/'); return; }
         }
 
         var form = document.querySelector('form[class*="gsbp-"]');
@@ -747,7 +769,7 @@ function fund_v5_script() {
                         msg(m,false); reset();
                     }
                 },
-                error:function(){ msg('เชื่อมต่อไม่ได้',false); reset(); }
+                error:function(x,s){ msg(s==='timeout'?'เซิร์ฟเวอร์ไม่ตอบสนอง กรุณาลองใหม่':'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่ภายหลัง',false); reset(); }
             });
 
             function reset(){ busy=false; btns.forEach(function(b){ b.style.opacity=''; b.style.pointerEvents=''; }); }
@@ -767,7 +789,7 @@ function fund_v5_script() {
     function initProfile(){
         var token = getCookie('auth_api_token');
         if(!token){
-            window.location.href = '/'+encodeURIComponent('เข้าสู่ระบบ')+'/';
+            safeRedirect('/'+encodeURIComponent('เข้าสู่ระบบ')+'/');
             return;
         }
 
@@ -778,7 +800,13 @@ function fund_v5_script() {
 
         jQuery.post(AJAX, {action:'fund_account_info', token:token}, function(res){
             log('Account info: '+JSON.stringify(res).substring(0,300));
-            if(!res.success || !res.data || !res.data.user){ doLogout(); return; }
+            if(!res.success || !res.data || !res.data.user){
+                // Token หมดอายุ — ลบ cookie + localStorage แต่ไม่ redirect
+                document.cookie = 'auth_api_token=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT';
+                localStorage.removeItem('auth_user');
+                document.getElementById('fund-loading').innerHTML = '<div style="text-align:center;padding:40px;"><div style="font-size:24px;margin-bottom:8px;">⚠️</div>เซสชันหมดอายุ กรุณา<a href="/'+encodeURIComponent('เข้าสู่ระบบ')+'/" style="color:#667eea;">เข้าสู่ระบบ</a>อีกครั้ง</div>';
+                return;
+            }
 
             var u = res.data.user;
             var linked = res.data.linked_accounts || [];
@@ -794,9 +822,12 @@ function fund_v5_script() {
             var initial = (u.display_name||u.username||'U').charAt(0).toUpperCase();
 
             if(u.avatar_url){
-                avatarImg.src = '<?php echo FUND_BACKEND; ?>' + u.avatar_url;
+                // ถ้าเป็น URL เต็ม (Google) ใช้ตรงๆ ถ้าเป็น path ใช้ FUND_BACKEND
+                var imgSrc = u.avatar_url.startsWith('http') ? u.avatar_url : '<?php echo FUND_BACKEND; ?>' + u.avatar_url;
+                avatarImg.src = imgSrc;
                 avatarImg.style.display = 'block';
                 avatarInitial.style.display = 'none';
+                avatarImg.onerror = function(){ this.style.display='none'; avatarInitial.style.display=''; };
             } else {
                 avatarInitial.textContent = initial;
             }
@@ -819,6 +850,9 @@ function fund_v5_script() {
                         msg('อัพโหลดรูปสำเร็จ!',true);
                         avatarImg.src='<?php echo FUND_BACKEND; ?>'+r.data.avatar_url+'?t='+Date.now();
                         avatarImg.style.display='block'; avatarInitial.style.display='none';
+                        // อัพเดท localStorage
+                        var su=JSON.parse(localStorage.getItem('auth_user')||'{}');
+                        su.avatar_url=r.data.avatar_url; localStorage.setItem('auth_user',JSON.stringify(su));
                     } else { msg(r.data?.detail||r.data?.error||'อัพโหลดไม่สำเร็จ',false); }
                 },error:function(){ msg('อัพโหลดไม่ได้',false); }});
             });
@@ -849,6 +883,9 @@ function fund_v5_script() {
                         document.getElementById('fund-display-name').textContent=newName;
                         document.getElementById('fund-name-edit').style.display='none';
                         document.getElementById('fund-name-display').style.display='inline-flex';
+                        // อัพเดท localStorage
+                        var su=JSON.parse(localStorage.getItem('auth_user')||'{}');
+                        su.display_name=newName; localStorage.setItem('auth_user',JSON.stringify(su));
                     } else { msg(r.data?.detail||r.data?.error||'เปลี่ยนไม่สำเร็จ',false); }
                 });
             });
@@ -900,7 +937,7 @@ function fund_v5_script() {
                         var n=document.getElementById('pw-new').value,c=document.getElementById('pw-confirm').value;
                         if(n.length<6){msg('ต้องมีอย่างน้อย 6 ตัว',false);return;} if(n!==c){msg('รหัสผ่านไม่ตรงกัน',false);return;}
                         jQuery.post(AJAX,{action:'fund_set_pw',token:token,new_password:n},function(r){
-                            if(r.success){msg('ตั้งรหัสผ่านสำเร็จ!',true);location.reload();}
+                            if(r.success){msg('ตั้งรหัสผ่านสำเร็จ!',true); pwForm.style.display='none'; document.getElementById('btn-set-pw').style.display=''; pwStatus.innerHTML='<span style="color:#22c55e;">✅ ตั้งแล้ว</span>';}
                             else{msg(r.data?.detail||r.data?.error||'ตั้งไม่สำเร็จ',false);}
                         });
                     });
@@ -913,40 +950,92 @@ function fund_v5_script() {
             var gSection = document.getElementById('fund-google-section');
 
             if(googleLinked){
-                gStatus.innerHTML = '<span style="color:#22c55e;">✅ เชื่อมแล้ว</span>';
-                gEmail.style.display='block'; gEmail.textContent=googleLinked.email;
-                gSection.innerHTML = '<button id="btn-unlink-google" style="width:100%;padding:10px;border:1px solid #fca5a5;border-radius:8px;background:white;cursor:pointer;font-size:14px;color:#ef4444;">ยกเลิกเชื่อม Google</button>';
+                gStatus.innerHTML = '<span style="color:#22c55e;">เชื่อมแล้ว</span>';
+                gSection.innerHTML = ''
+                    + '<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:#fafafa;border:1px solid #eee;border-radius:10px;">'
+                    + '  <div style="width:40px;height:40px;border-radius:50%;background:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
+                    + '    <img src="https://developers.google.com/identity/images/g-logo.png" style="width:22px;height:22px;">'
+                    + '  </div>'
+                    + '  <div style="flex:1;min-width:0;">'
+                    + '    <div style="font-size:14px;font-weight:500;color:#333;">Google</div>'
+                    + '    <div style="font-size:12px;color:#888;overflow:hidden;text-overflow:ellipsis;">'+googleLinked.email+'</div>'
+                    + '  </div>'
+                    + '  <button id="btn-unlink-google" style="padding:7px 16px;border:1px solid #e0e0e0;border-radius:20px;background:white;cursor:pointer;font-size:13px;color:#555;white-space:nowrap;transition:all 0.2s;" onmouseover="this.style.borderColor=\'#ef4444\';this.style.color=\'#ef4444\'" onmouseout="this.style.borderColor=\'#e0e0e0\';this.style.color=\'#555\'">Unlink</button>'
+                    + '</div>';
                 document.getElementById('btn-unlink-google').addEventListener('click', function(){
                     if(!confirm('ยืนยันยกเลิกเชื่อม Google?')) return;
                     jQuery.post(AJAX,{action:'fund_unlink_google',token:token},function(r){
-                        if(r.success){msg('ยกเลิกเชื่อม Google สำเร็จ',true);location.reload();}
+                        if(r.success){msg('ยกเลิกเชื่อม Google สำเร็จ',true); setTimeout(function(){location.reload();},1500);}
                         else{msg(r.data?.detail||r.data?.error||'ยกเลิกไม่สำเร็จ',false);}
                     });
                 });
             } else {
-                gStatus.innerHTML = '<span style="color:#999;">❌ ยังไม่ได้เชื่อม</span>';
-                gSection.innerHTML = '<div id="btn-link-google" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border:1px solid #e0e0e0;border-radius:8px;cursor:pointer;font-size:14px;background:white;"><img src="https://developers.google.com/identity/images/g-logo.png" style="width:18px;height:18px;"> เชื่อม Google Account</div>';
-                var gs=document.createElement('script'); gs.src='https://accounts.google.com/gsi/client';
-                gs.onload=function(){
+                gStatus.innerHTML = '<span style="color:#999;">ยังไม่ได้เชื่อม</span>';
+                gSection.innerHTML = ''
+                    + '<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:#fafafa;border:1px dashed #ddd;border-radius:10px;">'
+                    + '  <div style="width:40px;height:40px;border-radius:50%;background:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0;">'
+                    + '    <img src="https://developers.google.com/identity/images/g-logo.png" style="width:22px;height:22px;opacity:0.4;">'
+                    + '  </div>'
+                    + '  <div style="flex:1;min-width:0;">'
+                    + '    <div style="font-size:14px;color:#999;">Google</div>'
+                    + '    <div style="font-size:12px;color:#bbb;">ยังไม่ได้เชื่อม</div>'
+                    + '  </div>'
+                    + '  <button id="btn-link-google" style="padding:7px 16px;border:1px solid #667eea;border-radius:20px;background:white;cursor:pointer;font-size:13px;color:#667eea;white-space:nowrap;transition:all 0.2s;" onmouseover="this.style.background=\'#667eea\';this.style.color=\'white\'" onmouseout="this.style.background=\'white\';this.style.color=\'#667eea\'">Link</button>'
+                    + '</div>';
+
+                document.getElementById('btn-link-google').addEventListener('click', function(e){
+                    e.preventDefault();
+                    var btn = this;
+                    btn.textContent = '...';
+                    btn.disabled = true;
                     jQuery.post(AJAX,{action:'fund_google_url'},function(res){
-                        if(!res.success||!res.data||!res.data.url)return;
-                        var m=res.data.url.match(/client_id=([^&]+)/); if(!m)return;
-                        google.accounts.id.initialize({client_id:m[1],callback:function(response){
-                            jQuery.post(AJAX,{action:'fund_link_google',token:token,credential:response.credential},function(r){
-                                if(r.success){msg('เชื่อม Google สำเร็จ!',true);location.reload();}
+                        if(!res.success||!res.data||!res.data.url){ msg('เชื่อมต่อไม่ได้',false); btn.textContent='Link'; btn.disabled=false; return; }
+                        var m=res.data.url.match(/client_id=([^&]+)/);
+                        if(!m){ btn.textContent='Link'; btn.disabled=false; return; }
+                        var clientId=m[1];
+
+                        window._fundLinkGoogleDone = function(credential){
+                            msg('กำลังเชื่อม Google...',true);
+                            jQuery.post(AJAX,{action:'fund_link_google',token:token,credential:credential},function(r){
+                                if(r.success){msg('เชื่อม Google สำเร็จ!',true); setTimeout(function(){location.reload();},1500);}
                                 else{msg(r.data?.detail||r.data?.error||'เชื่อมไม่สำเร็จ',false);}
                             });
-                        }});
-                        document.getElementById('btn-link-google').addEventListener('click',function(){google.accounts.id.prompt();});
+                        };
+
+                        // เปิด popup
+                        var w=420, h=500;
+                        var left=(screen.width-w)/2, top=(screen.height-h)/2;
+                        var popup = window.open('','google_link_popup','width='+w+',height='+h+',left='+left+',top='+top);
+                        popup.document.write(
+                            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Link Google</title>'
+                            +'<script src="https://accounts.google.com/gsi/client"><\/script></head>'
+                            +'<body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:-apple-system,sans-serif;background:#fafafa;">'
+                            +'<div style="text-align:center;background:white;padding:32px;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);">'
+                            +'<img src="https://developers.google.com/identity/images/g-logo.png" style="width:40px;height:40px;margin-bottom:12px;">'
+                            +'<p style="margin:0 0 20px;color:#333;font-size:15px;">เลือก Google Account<br><span style="font-size:12px;color:#999;">เพื่อเชื่อมกับบัญชีของคุณ</span></p>'
+                            +'<div id="g-btn"></div>'
+                            +'</div>'
+                            +'<script>'
+                            +'google.accounts.id.initialize({client_id:"'+clientId+'",ux_mode:"popup",callback:function(r){'
+                            +'  if(window.opener&&window.opener._fundLinkGoogleDone){window.opener._fundLinkGoogleDone(r.credential);}'
+                            +'  window.close();'
+                            +'}});'
+                            +'google.accounts.id.renderButton(document.getElementById("g-btn"),{type:"standard",theme:"outline",size:"large",text:"continue_with",shape:"pill",width:250});'
+                            +'<\/script></body></html>'
+                        );
+                        popup.document.close();
+                        btn.textContent='Link'; btn.disabled=false;
+                        var check=setInterval(function(){ if(popup.closed){clearInterval(check); btn.textContent='Link'; btn.disabled=false;} },500);
                     });
-                };
-                document.head.appendChild(gs);
+                });
             }
 
             // Logout
             document.getElementById('fund-btn-logout').addEventListener('click', function(){ doLogout(); });
 
-        }).fail(function(){ msg('โหลดโปรไฟล์ไม่ได้',false); });
+        }).fail(function(){
+            document.getElementById('fund-loading').innerHTML = '<div style="text-align:center;padding:40px;"><div style="font-size:24px;margin-bottom:8px;">❌</div>เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่</div>';
+        });
     }
 
 
@@ -1155,7 +1244,7 @@ function fund_v5_script() {
                     if(res.success && !res.data.error){
                         msg('เปลี่ยนรหัสผ่านสำเร็จ!', true);
                         setTimeout(function(){
-                            window.location.href = '/'+encodeURIComponent('เข้าสู่ระบบ')+'/';
+                            safeRedirect('/'+encodeURIComponent('เข้าสู่ระบบ')+'/');
                         }, 1500);
                     } else {
                         var m = 'ลิงก์หมดอายุหรือไม่ถูกต้อง กรุณาขอลิงก์ใหม่';
@@ -1202,6 +1291,27 @@ function fund_v5_script() {
     // ================================================================
     // INIT
     // ================================================================
+    // Redirect loop protection
+    var RKEY = 'fund_redirect_count';
+    var RTIME = 'fund_redirect_time';
+    function safeRedirect(url){
+        var now = Date.now();
+        var lastTime = parseInt(sessionStorage.getItem(RTIME)||'0');
+        var count = parseInt(sessionStorage.getItem(RKEY)||'0');
+        // Reset counter ถ้าผ่านไป 10 วิ
+        if(now - lastTime > 10000){ count = 0; }
+        count++;
+        sessionStorage.setItem(RKEY, count);
+        sessionStorage.setItem(RTIME, now);
+        if(count > 3){
+            log('Redirect loop detected! Stopping.');
+            sessionStorage.removeItem(RKEY);
+            sessionStorage.removeItem(RTIME);
+            return; // หยุด ไม่ redirect
+        }
+        window.location.href = url;
+    }
+
     function go(){
         var p = decodeURIComponent(location.pathname);
         log('Page: ' + p);
@@ -1227,6 +1337,11 @@ function fund_v5_script() {
     var started = false;
     function tryGo(){
         if(started) return;
+        if(typeof jQuery === 'undefined'){
+            log('Waiting for jQuery...');
+            setTimeout(tryGo, 200);
+            return;
+        }
         started = true;
         go();
     }
@@ -1236,6 +1351,7 @@ function fund_v5_script() {
         setTimeout(tryGo, 300);
     }
     setTimeout(tryGo, 2000);
+    setTimeout(tryGo, 4000);
 
 })();
 </script>
