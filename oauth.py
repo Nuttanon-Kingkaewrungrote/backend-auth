@@ -178,11 +178,25 @@ class GoogleTokenRequest(BaseModel):
 async def google_verify_token(body: GoogleTokenRequest):
     """Verify Google ID token จาก popup flow แล้ว return JWT"""
     try:
-        # Decode Google ID token
-        # Google ID token เป็น JWT ที่ sign ด้วย Google's keys
-        # เราต้อง verify กับ Google
+        # Step 1: Decode JWT โดยไม่ verify signature เพื่อดึง claims (picture, name)
+        # Google ID token จาก GIS จะมี picture เสมอ
+        try:
+            jwt_claims = jwt.decode(body.credential, options={"verify_signature": False})
+            google_id = jwt_claims.get('sub', '')
+            google_email = jwt_claims.get('email', '')
+            google_name = jwt_claims.get('name', '')
+            google_picture = jwt_claims.get('picture', '')
+            jwt_aud = jwt_claims.get('aud', '')
+        except Exception:
+            jwt_claims = None
+            google_id = ''
+            google_email = ''
+            google_name = ''
+            google_picture = ''
+            jwt_aud = ''
+
+        # Step 2: Verify กับ Google tokeninfo (ยืนยันว่า token จริง)
         async with httpx.AsyncClient() as client:
-            # ใช้ Google tokeninfo endpoint
             r = await client.get(
                 f"https://oauth2.googleapis.com/tokeninfo?id_token={body.credential}"
             )
@@ -195,10 +209,15 @@ async def google_verify_token(body: GoogleTokenRequest):
             if google_user.get('aud') != GOOGLE_CLIENT_ID:
                 raise HTTPException(status_code=400, detail="Token not for this app")
             
-            google_id = google_user['sub']  # Google user ID
-            google_email = google_user['email']
-            google_name = google_user.get('name', '')
-            google_picture = google_user.get('picture', '')
+            # ใช้ค่าจาก tokeninfo เป็นหลัก แต่ถ้าไม่มี picture ให้ใช้จาก JWT
+            google_id = google_user.get('sub', google_id)
+            google_email = google_user.get('email', google_email)
+            google_name = google_user.get('name', google_name)
+            # tokeninfo มักไม่มี picture → ใช้จาก JWT decode
+            if not google_user.get('picture') and google_picture:
+                logger.info(f"Using picture from JWT decode (tokeninfo didn't have it)")
+            else:
+                google_picture = google_user.get('picture', google_picture)
         
         logger.info(f"Google Popup: {google_email} (ID: {google_id})")
         conn = get_db()
@@ -314,7 +333,14 @@ async def link_google_account(body: GoogleTokenRequest, credentials: HTTPAuthori
     user = _verify_token(credentials)
     
     try:
-        # Verify Google token
+        # Step 1: Decode JWT เพื่อดึง picture
+        try:
+            jwt_claims = jwt.decode(body.credential, options={"verify_signature": False})
+            jwt_picture = jwt_claims.get('picture', '')
+        except Exception:
+            jwt_picture = ''
+
+        # Step 2: Verify กับ Google tokeninfo
         async with httpx.AsyncClient() as client:
             r = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={body.credential}")
             if r.status_code != 200:
@@ -324,7 +350,7 @@ async def link_google_account(body: GoogleTokenRequest, credentials: HTTPAuthori
                 raise HTTPException(status_code=400, detail="Token not for this app")
             google_id = google_user['sub']
             google_email = google_user['email']
-            google_picture = google_user.get('picture', '')
+            google_picture = google_user.get('picture', '') or jwt_picture
         
         conn = get_db()
         

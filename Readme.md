@@ -268,7 +268,6 @@ python3 Config.py check
 | 9 | `.env` | `EMAIL_PASSWORD` | Gmail App Password |
 | 10 | `main.py` บรรทัด ~90 | `allow_origins` | เพิ่ม `https://[WordPress]` |
 | 11 | `Config.py` บรรทัด ~177 | `get_cors_origins()` production | เปลี่ยน `yourdomain.com` → `[WordPress]` |
-| 12 | `wordpress_snippet.php` บรรทัด 15 | `FUND_BACKEND` | `https://[VM]` |
 | 13 | Google Cloud Console | Authorized JS origins | `https://[WordPress]` |
 | 14 | Google Cloud Console | Authorized redirect URIs | `https://[VM]/api/auth/google/callback` |
 
